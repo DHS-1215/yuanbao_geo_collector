@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+output/
+.idea/
+
+# 浏览器独立登录态
+.chrome-profile/
