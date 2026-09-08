@@ -33,6 +33,7 @@ from app.yuanbao.types import (
 
 from app.yuanbao.result import (
     YuanbaoCollectionResult,
+    utc_now_iso,
 )
 
 from app.yuanbao.source import YuanbaoSource
@@ -87,7 +88,6 @@ class YuanbaoClient:
     ) -> YuanbaoCollectionResult:
 
         try:
-
             self.new_chat()
 
             self.set_profile(
@@ -99,21 +99,7 @@ class YuanbaoClient:
                 question
             )
 
-            sources = self.get_sources()
-
-            return YuanbaoCollectionResult(
-                question=question,
-                answer=answer,
-                model=model.value,
-                mode=mode.value,
-                conversation_url=self.page.url,
-                sources=sources,
-                status="success",
-            )
-
-
         except Exception as e:
-
             return YuanbaoCollectionResult(
                 question=question,
                 answer="",
@@ -123,7 +109,47 @@ class YuanbaoClient:
                 sources=[],
                 status="failed",
                 error=str(e),
+                acquisition_status="failed",
+                validation_status="NOT_APPLICABLE",
+                is_complete=False,
+                source_collection_status="failed",
+                source_count_raw=0,
+                collected_at=utc_now_iso(),
             )
+
+        source_collection_status = "success"
+        source_error = ""
+
+        try:
+            sources = self.get_sources()
+
+        except Exception as e:
+            sources = []
+            source_collection_status = "failed"
+            source_error = str(e)
+
+        return YuanbaoCollectionResult(
+            question=question,
+            answer=answer,
+            model=model.value,
+            mode=mode.value,
+            conversation_url=self.page.url,
+            sources=sources,
+            status="success",
+            acquisition_status="success",
+            validation_status="NOT_APPLICABLE",
+            is_complete=bool(
+                answer.strip()
+            ),
+            source_collection_status=(
+                source_collection_status
+            ),
+            source_count_raw=len(
+                sources
+            ),
+            source_error=source_error,
+            collected_at=utc_now_iso(),
+        )
 
     def _fill_question(
             self,
