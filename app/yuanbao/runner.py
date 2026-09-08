@@ -14,6 +14,7 @@ from app.yuanbao.types import (
 
 @dataclass
 class YuanbaoTask:
+    task_id: str
     question: str
     model: YuanbaoModel
     mode: YuanbaoMode
@@ -24,19 +25,31 @@ class YuanbaoBatchRunner:
     def __init__(
             self,
             client: YuanbaoClient,
+            batch_id: str,
+            product: str,
     ):
         self.client = client
         self.config = client.config
+        self.batch_id = batch_id
+        self.product = product
 
     def run_task(
             self,
             task: YuanbaoTask,
     ) -> YuanbaoCollectionResult:
-        return self.client.collect(
+
+        result = self.client.collect(
             question=task.question,
             model=task.model,
             mode=task.mode,
         )
+
+        result.task_id = task.task_id
+        result.batch_id = self.batch_id
+        result.product = self.product
+        result.platform = "yuanbao"
+
+        return result
 
     def run(
             self,

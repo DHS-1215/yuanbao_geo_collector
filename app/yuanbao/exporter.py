@@ -63,6 +63,10 @@ class YuanbaoExporter:
         for result in results:
             data.append(
                 {
+                    "batch_id": result.batch_id,
+                    "task_id": result.task_id,
+                    "platform": result.platform,
+                    "product": result.product,
                     "question": result.question,
                     "answer": result.answer,
                     "model": result.model,
@@ -85,6 +89,10 @@ class YuanbaoExporter:
         for result in results:
             data.append(
                 {
+                    "batch_id": result.batch_id,
+                    "task_id": result.task_id,
+                    "platform": result.platform,
+                    "product": result.product,
                     "question": result.question,
                     "sources": [
                         {
@@ -114,9 +122,22 @@ class YuanbaoExporter:
         )
 
         failed = len(results) - success
+        batch_id = (
+            results[0].batch_id
+            if results
+            else ""
+        )
+
+        product = (
+            results[0].product
+            if results
+            else ""
+        )
 
         manifest = {
+            "batch_id": batch_id,
             "platform": "yuanbao",
+            "product": product,
             "total": len(results),
             "success": success,
             "failed": failed,

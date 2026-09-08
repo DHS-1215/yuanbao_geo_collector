@@ -24,7 +24,8 @@ def load_questions(
         for row in reader:
             tasks.append(
                 YuanbaoTask(
-                    question=row["question"],
+                    task_id=row["id"].strip(),
+                    question=row["question"].strip(),
                     model=YuanbaoModel.HY3,
                     mode=YuanbaoMode.EXPERT,
                 )

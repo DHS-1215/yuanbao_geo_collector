@@ -22,3 +22,11 @@ class YuanbaoCollectionResult:
     status: str = "success"
 
     error: str = ""
+
+    task_id: str = ""
+
+    batch_id: str = ""
+
+    product: str = ""
+
+    platform: str = "yuanbao"

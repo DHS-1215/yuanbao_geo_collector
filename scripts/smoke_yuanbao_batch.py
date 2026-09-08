@@ -1,4 +1,5 @@
 from playwright.sync_api import sync_playwright
+from datetime import datetime
 
 from app.browser.cdp import connect_cdp
 from app.core.config import get_settings
@@ -10,11 +11,15 @@ from app.yuanbao.exporter import YuanbaoExporter
 
 
 def main():
-
     settings = get_settings()
 
-    with sync_playwright() as playwright:
+    batch_id = datetime.now().strftime(
+        "batch_%Y%m%d_%H%M%S"
+    )
 
+    product = "鸿茅药酒"
+
+    with sync_playwright() as playwright:
         browser = connect_cdp(
             playwright,
             settings.cdp_url,
@@ -32,13 +37,18 @@ def main():
         )
 
         runner = YuanbaoBatchRunner(
-            client
+            client=client,
+            batch_id=batch_id,
+            product=product,
         )
+
+        print(f"[BATCH]   {batch_id}")
+        print(f"[PRODUCT] {product}")
+        print()
 
         results = runner.run(
             tasks
         )
-
 
         exporter = YuanbaoExporter()
 
@@ -46,7 +56,6 @@ def main():
             results,
             "output/test_batch"
         )
-
 
         print()
         print("=" * 80)
