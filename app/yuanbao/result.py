@@ -25,6 +25,10 @@ class YuanbaoCollectionResult:
 
     task_id: str = ""
 
+    question_id: str = ""
+
+    mode_code: str = ""
+
     batch_id: str = ""
 
     product: str = ""
