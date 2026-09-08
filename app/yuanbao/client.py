@@ -3,7 +3,10 @@ from __future__ import annotations
 import random
 import time
 
-from playwright.sync_api import Page
+from playwright.sync_api import (
+    Page,
+    TimeoutError as PlaywrightTimeoutError,
+)
 
 from .config import YuanbaoConfig
 
@@ -173,7 +176,80 @@ class YuanbaoClient:
                 + self.answer_timeout_seconds
         )
 
+        clarification_handled = False
+
         while time.monotonic() < deadline:
+
+            # 检测元宝动态澄清卡
+            if not clarification_handled:
+                skip_all = self.page.get_by_text(
+                    "跳过所有",
+                    exact=False,
+                )
+
+                for index in range(
+                        skip_all.count()
+                ):
+                    item = skip_all.nth(index)
+
+                    if not item.is_visible():
+                        continue
+
+                    print(
+                        "[CLARIFICATION] 检测到澄清卡"
+                    )
+
+                    print(
+                        "[CLARIFICATION] "
+                        + item.inner_text().strip()
+                    )
+
+                    # 保留一次真实 DOM，方便后续排查
+                    try:
+                        html = item.evaluate(
+                            "(el) => el.outerHTML"
+                        )
+
+                        parent_html = item.evaluate(
+                            "(el) => "
+                            "el.parentElement "
+                            "? el.parentElement.outerHTML "
+                            ": ''"
+                        )
+
+                        print(
+                            f"[CLARIFICATION DOM] {html}"
+                        )
+
+                        print(
+                            "[CLARIFICATION PARENT DOM] "
+                            f"{parent_html}"
+                        )
+
+                    except Exception:
+                        pass
+
+                    # 自动跳过全部澄清问题
+                    item.click(
+                        force=True,
+                        timeout=2000,
+                    )
+
+                    print(
+                        "[CLARIFICATION] 已自动跳过"
+                    )
+
+                    clarification_handled = True
+
+                    self.page.wait_for_timeout(
+                        500
+                    )
+
+                    break
+
+                if clarification_handled:
+                    continue
+
             answers = self.page.locator(
                 ANSWER_SELECTOR
             )
@@ -184,16 +260,29 @@ class YuanbaoClient:
                 latest_answer = answers.last
 
                 class_name = (
-                        latest_answer.get_attribute("class")
+                        latest_answer.get_attribute(
+                            "class"
+                        )
                         or ""
                 )
 
-                send_aria = (
-                    self.page
-                    .locator(SEND_SELECTOR)
-                    .first
-                    .get_attribute("aria-label")
-                )
+                # 澄清流程出现时，发送按钮可能暂时消失。
+                send_button = self.page.locator(
+                    SEND_SELECTOR
+                ).first
+
+                send_aria = None
+
+                if send_button.count() > 0:
+                    try:
+                        send_aria = (
+                            send_button.get_attribute(
+                                "aria-label",
+                                timeout=500,
+                            )
+                        )
+                    except PlaywrightTimeoutError:
+                        send_aria = None
 
                 answer_done = (
                         "hyc-content-md-done"
@@ -214,7 +303,9 @@ class YuanbaoClient:
                     if text:
                         return text
 
-            self.page.wait_for_timeout(500)
+            self.page.wait_for_timeout(
+                500
+            )
 
         raise TimeoutError(
             "等待腾讯元宝回答完成超时"

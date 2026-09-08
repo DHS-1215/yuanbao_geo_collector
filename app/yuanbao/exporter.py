@@ -37,11 +37,6 @@ class YuanbaoExporter:
             output / "manifest.json",
         )
 
-        self._save_manifest(
-            results,
-            output / "manifest.json",
-        )
-
         checksum_files = [
             output / "answers.json",
             output / "sources.json",
@@ -56,7 +51,6 @@ class YuanbaoExporter:
             output / "checksums.json",
             checksums,
         )
-
 
     def _save_answers(
             self,

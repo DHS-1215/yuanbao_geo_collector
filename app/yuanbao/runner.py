@@ -69,6 +69,14 @@ class YuanbaoBatchRunner:
                 f"STATUS: {result.status}"
             )
 
+            if (
+                    result.status == "failed"
+                    and result.error
+            ):
+                print(
+                    f"ERROR: {result.error}"
+                )
+
             if index < len(tasks) - 1:
                 time.sleep(
                     random.uniform(
