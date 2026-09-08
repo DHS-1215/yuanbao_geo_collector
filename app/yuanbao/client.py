@@ -5,11 +5,7 @@ import time
 
 from playwright.sync_api import Page
 
-from playwright.sync_api import sync_playwright
-
 from .config import YuanbaoConfig
-
-from urllib.parse import urlparse
 
 from app.yuanbao.selectors import (
     ANSWER_SELECTOR,
@@ -19,13 +15,9 @@ from app.yuanbao.selectors import (
     MODE_OPTION_SELECTOR,
     NEW_CHAT_SELECTOR,
     QUESTION_SELECTOR,
-    REFERENCE_CARD_SELECTOR,
     REFERENCE_CLOSE_SELECTOR,
-    REFERENCE_DESC_SELECTOR,
     REFERENCE_DRAWER_SELECTOR,
     REFERENCE_ITEM_SELECTOR,
-    REFERENCE_SOURCE_SELECTOR,
-    REFERENCE_TITLE_SELECTOR,
     SEND_SELECTOR,
     SOURCE_TOOL_SELECTOR,
 )
@@ -42,8 +34,9 @@ from app.yuanbao.result import (
 
 from app.yuanbao.source import YuanbaoSource
 
+from app.yuanbao.extractor import YuanbaoSourceExtractor
+
 from app.yuanbao.selectors import (
-    # 你原来的...
     REFERENCE_CARD_SELECTOR,
     REFERENCE_CLOSE_SELECTOR,
     REFERENCE_DESC_SELECTOR,
@@ -523,81 +516,11 @@ class YuanbaoClient:
             return []
 
         try:
-            items = self.page.locator(
-                REFERENCE_ITEM_SELECTOR
+            extractor = YuanbaoSourceExtractor(
+                page=self.page,
             )
 
-            sources: list[YuanbaoSource] = []
-
-            for index in range(
-                    items.count()
-            ):
-                item = items.nth(index)
-
-                card = item.locator(
-                    REFERENCE_CARD_SELECTOR
-                ).first
-
-                if card.count() == 0:
-                    continue
-
-                url = (
-                        card.get_attribute(
-                            "data-url"
-                        )
-                        or item.get_attribute(
-                    "dt-ext6"
-                )
-                        or ""
-                ).strip()
-
-                domain = ""
-
-                if url:
-                    domain = urlparse(url).netloc
-
-                source_node = item.locator(
-                    REFERENCE_SOURCE_SELECTOR
-                ).first
-
-                title_node = item.locator(
-                    REFERENCE_TITLE_SELECTOR
-                ).first
-
-                desc_node = item.locator(
-                    REFERENCE_DESC_SELECTOR
-                ).first
-
-                source = (
-                    source_node.inner_text().strip()
-                    if source_node.count()
-                    else ""
-                )
-
-                title = (
-                    title_node.inner_text().strip()
-                    if title_node.count()
-                    else ""
-                )
-
-                description = (
-                    desc_node.inner_text().strip()
-                    if desc_node.count()
-                    else ""
-                )
-
-                sources.append(
-                    YuanbaoSource(
-                        index=index + 1,
-                        source=source,
-                        title=title,
-                        description=description,
-                        url=url,
-                        domain=domain,
-                    )
-                )
-
-            return sources
+            return extractor.extract()
 
         finally:
             self._close_sources()
