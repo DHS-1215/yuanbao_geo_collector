@@ -7,6 +7,7 @@ from app.yuanbao.checksum import generate_checksums
 from app.yuanbao.geo_contract import (
     YUANBAO_PLATFORM_CODE,
     build_answer_id,
+    build_occurrence_id,
 )
 from app.yuanbao.result import YuanbaoCollectionResult
 
@@ -35,6 +36,11 @@ class YuanbaoExporter:
         self._save_answers_jsonl(
             results,
             output / "answers.jsonl",
+        )
+
+        self._save_sources_jsonl(
+            results,
+            output / "sources.jsonl",
         )
 
         # 旧版输出暂时保留，
@@ -169,6 +175,87 @@ class YuanbaoExporter:
                     ),
                 }
             )
+
+        self._write_jsonl(
+            path,
+            rows,
+        )
+
+    def _save_sources_jsonl(
+            self,
+            results: list[YuanbaoCollectionResult],
+            path: Path,
+    ) -> None:
+
+        rows = []
+
+        for result in results:
+            answer_id = build_answer_id(
+                batch_id=result.batch_id,
+                task_id=result.task_id,
+            )
+
+            seen_urls: set[str] = set()
+
+            for source in result.sources:
+                source_url_raw = (
+                    source.url.strip()
+                )
+
+                # 中央标准 source_url_raw
+                # 不能为空。
+                if not source_url_raw:
+                    continue
+
+                is_duplicate = (
+                        source_url_raw
+                        in seen_urls
+                )
+
+                seen_urls.add(
+                    source_url_raw
+                )
+
+                source_order = (
+                    source.index
+                )
+
+                occurrence_id = (
+                    build_occurrence_id(
+                        batch_id=result.batch_id,
+                        answer_id=answer_id,
+                        source_order=source_order,
+                        source_url_raw=source_url_raw,
+                    )
+                )
+
+                rows.append(
+                    {
+                        "answer_id": answer_id,
+                        "source_order": source_order,
+                        "source_url_raw": (
+                            source_url_raw
+                        ),
+                        "source_title_raw": (
+                                source.title
+                                or None
+                        ),
+                        "source_site_name_raw": (
+                                source.source
+                                or None
+                        ),
+                        "source_snippet": (
+                                source.description
+                                or None
+                        ),
+                        "is_duplicate_in_answer": (
+                            is_duplicate
+                        ),
+                        "occurrence_id": (
+                            occurrence_id
+                        ),
+                    }
+                )
 
         self._write_jsonl(
             path,

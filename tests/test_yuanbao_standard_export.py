@@ -4,8 +4,10 @@ from app.yuanbao.exporter import YuanbaoExporter
 from app.yuanbao.geo_contract import (
     YUANBAO_PLATFORM_CODE,
     build_answer_id,
+    build_occurrence_id,
 )
 from app.yuanbao.result import YuanbaoCollectionResult
+from app.yuanbao.source import YuanbaoSource
 
 
 def read_jsonl(path):
@@ -186,3 +188,211 @@ def test_quick_and_expert_have_different_answer_ids(
             rows[0]["answer_id"]
             != rows[1]["answer_id"]
     )
+
+
+def test_export_writes_sources_jsonl(
+        tmp_path,
+):
+    result = build_result()
+
+    result.sources = [
+        YuanbaoSource(
+            index=1,
+            source="人民网",
+            title="测试来源一",
+            description="测试摘要一",
+            url="https://example.com/a",
+            domain="example.com",
+        ),
+        YuanbaoSource(
+            index=2,
+            source="腾讯医典",
+            title="测试来源二",
+            description="测试摘要二",
+            url="https://example.com/b",
+            domain="example.com",
+        ),
+    ]
+
+    result.source_count_raw = 2
+
+    YuanbaoExporter().export(
+        [result],
+        str(tmp_path),
+    )
+
+    rows = read_jsonl(
+        tmp_path / "sources.jsonl"
+    )
+
+    assert len(rows) == 2
+
+    answer_id = build_answer_id(
+        batch_id=result.batch_id,
+        task_id=result.task_id,
+    )
+
+    first = rows[0]
+
+    assert first["answer_id"] == answer_id
+    assert first["source_order"] == 1
+
+    assert (
+            first["source_url_raw"]
+            == "https://example.com/a"
+    )
+
+    assert (
+            first["source_title_raw"]
+            == "测试来源一"
+    )
+
+    assert (
+            first["source_site_name_raw"]
+            == "人民网"
+    )
+
+    assert (
+            first["source_snippet"]
+            == "测试摘要一"
+    )
+
+    assert (
+            first["is_duplicate_in_answer"]
+            is False
+    )
+
+    expected_occurrence_id = (
+        build_occurrence_id(
+            batch_id=result.batch_id,
+            answer_id=answer_id,
+            source_order=1,
+            source_url_raw=(
+                "https://example.com/a"
+            ),
+        )
+    )
+
+    assert (
+            first["occurrence_id"]
+            == expected_occurrence_id
+    )
+
+
+def test_duplicate_raw_url_is_marked(
+        tmp_path,
+):
+    result = build_result()
+
+    result.sources = [
+        YuanbaoSource(
+            index=1,
+            source="来源一",
+            title="标题一",
+            description="摘要一",
+            url="https://example.com/a",
+        ),
+        YuanbaoSource(
+            index=2,
+            source="来源一",
+            title="标题二",
+            description="摘要二",
+            url="https://example.com/a",
+        ),
+    ]
+
+    YuanbaoExporter().export(
+        [result],
+        str(tmp_path),
+    )
+
+    rows = read_jsonl(
+        tmp_path / "sources.jsonl"
+    )
+
+    assert len(rows) == 2
+
+    assert (
+            rows[0]["is_duplicate_in_answer"]
+            is False
+    )
+
+    assert (
+            rows[1]["is_duplicate_in_answer"]
+            is True
+    )
+
+    assert (
+            rows[0]["occurrence_id"]
+            != rows[1]["occurrence_id"]
+    )
+
+
+def test_blank_source_url_is_not_exported(
+        tmp_path,
+):
+    result = build_result()
+
+    result.sources = [
+        YuanbaoSource(
+            index=1,
+            source="无链接来源",
+            title="标题一",
+            description="摘要一",
+            url="",
+        ),
+        YuanbaoSource(
+            index=2,
+            source="正常来源",
+            title="标题二",
+            description="摘要二",
+            url="https://example.com/b",
+        ),
+    ]
+
+    YuanbaoExporter().export(
+        [result],
+        str(tmp_path),
+    )
+
+    rows = read_jsonl(
+        tmp_path / "sources.jsonl"
+    )
+
+    assert len(rows) == 1
+
+    assert (
+            rows[0]["source_order"]
+            == 2
+    )
+
+    assert (
+            rows[0]["source_url_raw"]
+            == "https://example.com/b"
+    )
+
+
+def test_empty_sources_still_create_sources_jsonl(
+        tmp_path,
+):
+    result = build_result()
+
+    result.sources = []
+
+    YuanbaoExporter().export(
+        [result],
+        str(tmp_path),
+    )
+
+    path = (
+            tmp_path
+            / "sources.jsonl"
+    )
+
+    assert path.exists()
+
+    rows = read_jsonl(
+        path
+    )
+
+    assert rows == []
