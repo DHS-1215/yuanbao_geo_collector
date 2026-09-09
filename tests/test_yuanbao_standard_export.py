@@ -8,6 +8,7 @@ from app.yuanbao.geo_contract import (
 )
 from app.yuanbao.result import YuanbaoCollectionResult
 from app.yuanbao.source import YuanbaoSource
+from app.yuanbao.checksum import calculate_sha256
 
 
 def read_jsonl(path):
@@ -544,4 +545,111 @@ def test_manifest_failed_task_has_warnings(
     assert (
             manifest["failed_tasks"]
             == 1
+    )
+
+
+def test_export_writes_formal_checksums(
+        tmp_path,
+):
+    result = build_result()
+
+    YuanbaoExporter().export(
+        [result],
+        str(tmp_path),
+    )
+
+    with open(
+            tmp_path / "checksums.json",
+            "r",
+            encoding="utf-8",
+    ) as f:
+        checksums = json.load(f)
+
+    assert set(
+        checksums.keys()
+    ) == {
+               "files"
+           }
+
+    files = checksums["files"]
+
+    expected_files = {
+        "manifest.json",
+        "tasks.jsonl",
+        "answers.jsonl",
+        "sources.jsonl",
+    }
+
+    assert (
+            set(files.keys())
+            == expected_files
+    )
+
+    for filename in expected_files:
+        assert (
+                files[filename]
+                == calculate_sha256(
+            tmp_path / filename
+        )
+        )
+
+    assert (
+            "checksums.json"
+            not in files
+    )
+
+
+def test_export_removes_legacy_json_files(
+        tmp_path,
+):
+    (
+            tmp_path
+            / "answers.json"
+    ).write_text(
+        "legacy",
+        encoding="utf-8",
+    )
+
+    (
+            tmp_path
+            / "sources.json"
+    ).write_text(
+        "legacy",
+        encoding="utf-8",
+    )
+
+    result = build_result()
+
+    YuanbaoExporter().export(
+        [result],
+        str(tmp_path),
+    )
+
+    assert not (
+            tmp_path
+            / "answers.json"
+    ).exists()
+
+    assert not (
+            tmp_path
+            / "sources.json"
+    ).exists()
+
+    expected_files = {
+        "manifest.json",
+        "tasks.jsonl",
+        "answers.jsonl",
+        "sources.jsonl",
+        "checksums.json",
+    }
+
+    actual_files = {
+        path.name
+        for path in tmp_path.iterdir()
+        if path.is_file()
+    }
+
+    assert (
+            actual_files
+            == expected_files
     )

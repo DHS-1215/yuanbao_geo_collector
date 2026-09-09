@@ -35,7 +35,21 @@ class YuanbaoExporter:
             exist_ok=True,
         )
 
-        # GEO v1 标准输出
+        # 清理旧版中间产物，避免标准目录中
+        # 残留 answers.json / sources.json。
+        for legacy_filename in (
+                "answers.json",
+                "sources.json",
+        ):
+            legacy_path = (
+                    output
+                    / legacy_filename
+            )
+
+            if legacy_path.exists():
+                legacy_path.unlink()
+
+        # GEO v1 标准数据文件
         self._save_tasks_jsonl(
             results,
             output / "tasks.jsonl",
@@ -51,18 +65,6 @@ class YuanbaoExporter:
             output / "sources.jsonl",
         )
 
-        # 旧版输出暂时保留，
-        # 后续 W9 阶段再逐步替换
-        self._save_answers(
-            results,
-            output / "answers.json",
-        )
-
-        self._save_sources(
-            results,
-            output / "sources.json",
-        )
-
         self._save_manifest(
             results,
             output / "manifest.json",
@@ -70,10 +72,12 @@ class YuanbaoExporter:
             finished_at=finished_at,
         )
 
+        # checksums.json 不计算自身 checksum。
         checksum_files = [
-            output / "answers.json",
-            output / "sources.json",
             output / "manifest.json",
+            output / "tasks.jsonl",
+            output / "answers.jsonl",
+            output / "sources.jsonl",
         ]
 
         checksums = generate_checksums(

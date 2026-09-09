@@ -2,7 +2,9 @@ import hashlib
 from pathlib import Path
 
 
-def calculate_sha256(file_path: str | Path) -> str:
+def calculate_sha256(
+        file_path: str | Path,
+) -> str:
     path = Path(file_path)
 
     sha256 = hashlib.sha256()
@@ -16,12 +18,18 @@ def calculate_sha256(file_path: str | Path) -> str:
 
 def generate_checksums(
         files: list[str | Path],
-) -> dict[str, str]:
-    result = {}
+) -> dict[str, dict[str, str]]:
+    file_checksums: dict[str, str] = {}
 
     for file in files:
         path = Path(file)
 
-        result[path.name] = calculate_sha256(path)
+        file_checksums[
+            path.name
+        ] = calculate_sha256(
+            path
+        )
 
-    return result
+    return {
+        "files": file_checksums
+    }

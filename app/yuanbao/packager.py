@@ -4,9 +4,10 @@ from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
 PACKAGE_FILES = (
-    "answers.json",
-    "sources.json",
     "manifest.json",
+    "tasks.jsonl",
+    "answers.jsonl",
+    "sources.jsonl",
     "checksums.json",
 )
 
