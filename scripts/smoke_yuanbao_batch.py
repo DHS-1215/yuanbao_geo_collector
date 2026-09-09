@@ -1,7 +1,10 @@
 from playwright.sync_api import sync_playwright
 from datetime import datetime
 
-from app.browser.cdp import connect_cdp
+from app.browser.cdp import (
+    connect_cdp,
+    find_page_by_url,
+)
 from app.core.config import get_settings
 
 from app.yuanbao.client import YuanbaoClient
@@ -28,7 +31,14 @@ def main():
             settings.cdp_url,
         )
 
-        page = browser.contexts[0].pages[0]
+        page = find_page_by_url(
+            browser,
+            settings.yuanbao_url,
+        )
+
+        print(
+            f"[PAGE]    {page.url}"
+        )
 
         client = YuanbaoClient(
             page=page,
