@@ -3,8 +3,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from app.yuanbao.result import YuanbaoCollectionResult
 from app.yuanbao.checksum import generate_checksums
+from app.yuanbao.geo_contract import (
+    YUANBAO_PLATFORM_CODE,
+    build_answer_id,
+)
+from app.yuanbao.result import YuanbaoCollectionResult
 
 
 class YuanbaoExporter:
@@ -22,6 +26,19 @@ class YuanbaoExporter:
             exist_ok=True,
         )
 
+        # GEO v1 标准输出
+        self._save_tasks_jsonl(
+            results,
+            output / "tasks.jsonl",
+        )
+
+        self._save_answers_jsonl(
+            results,
+            output / "answers.jsonl",
+        )
+
+        # 旧版输出暂时保留，
+        # 后续 W9 阶段再逐步替换
         self._save_answers(
             results,
             output / "answers.json",
@@ -52,11 +69,137 @@ class YuanbaoExporter:
             checksums,
         )
 
+    def _save_tasks_jsonl(
+            self,
+            results: list[YuanbaoCollectionResult],
+            path: Path,
+    ) -> None:
+
+        rows = []
+
+        for result in results:
+            rows.append(
+                {
+                    "task_id": result.task_id,
+                    "batch_id": result.batch_id,
+                    "platform_code": YUANBAO_PLATFORM_CODE,
+                    "question_id": result.question_id,
+                    "question": result.question,
+                    "mode_code": result.mode_code,
+                    "task_status": result.status,
+                    "error_code": None,
+                    "error_message": (
+                            result.error
+                            or None
+                    ),
+                }
+            )
+
+        self._write_jsonl(
+            path,
+            rows,
+        )
+
+    def _save_answers_jsonl(
+            self,
+            results: list[YuanbaoCollectionResult],
+            path: Path,
+    ) -> None:
+
+        rows = []
+
+        for result in results:
+            answer_id = build_answer_id(
+                batch_id=result.batch_id,
+                task_id=result.task_id,
+            )
+
+            platform_meta = {
+                "model": result.model,
+                "raw_mode": result.mode,
+                "conversation_url": result.conversation_url,
+            }
+
+            if result.source_error:
+                platform_meta[
+                    "source_error"
+                ] = result.source_error
+
+            rows.append(
+                {
+                    "answer_id": answer_id,
+                    "task_id": result.task_id,
+                    "question_id": result.question_id,
+                    "mode_code": result.mode_code,
+                    "question_text": result.question,
+                    "answer_text_raw": result.answer,
+                    "answer_text_clean": (
+                        result.answer.strip()
+                        if result.answer
+                        else ""
+                    ),
+                    "acquisition_status": (
+                        result.acquisition_status
+                    ),
+                    "validation_status": (
+                        result.validation_status
+                    ),
+                    "is_complete": (
+                        result.is_complete
+                    ),
+                    "source_collection_status": (
+                        result.source_collection_status
+                    ),
+                    "source_count_raw": (
+                        result.source_count_raw
+                    ),
+                    "screenshot_path": None,
+                    "platform_meta_json": (
+                        platform_meta
+                    ),
+                    "collected_at": (
+                            result.collected_at
+                            or None
+                    ),
+                    "batch_id": (
+                        result.batch_id
+                    ),
+                    "platform_code": (
+                        YUANBAO_PLATFORM_CODE
+                    ),
+                }
+            )
+
+        self._write_jsonl(
+            path,
+            rows,
+        )
+
+    def _write_jsonl(
+            self,
+            path: Path,
+            rows,
+    ) -> None:
+
+        with open(
+                path,
+                "w",
+                encoding="utf-8",
+        ) as f:
+            for row in rows:
+                f.write(
+                    json.dumps(
+                        row,
+                        ensure_ascii=False,
+                    )
+                )
+                f.write("\n")
+
     def _save_answers(
             self,
-            results,
+            results: list[YuanbaoCollectionResult],
             path: Path,
-    ):
+    ) -> None:
 
         data = []
 
@@ -76,13 +219,16 @@ class YuanbaoExporter:
                 }
             )
 
-        self._write_json(path, data)
+        self._write_json(
+            path,
+            data,
+        )
 
     def _save_sources(
             self,
-            results,
+            results: list[YuanbaoCollectionResult],
             path: Path,
-    ):
+    ) -> None:
 
         data = []
 
@@ -107,13 +253,16 @@ class YuanbaoExporter:
                 }
             )
 
-        self._write_json(path, data)
+        self._write_json(
+            path,
+            data,
+        )
 
     def _save_manifest(
             self,
-            results,
+            results: list[YuanbaoCollectionResult],
             path: Path,
-    ):
+    ) -> None:
 
         success = sum(
             1
@@ -121,7 +270,11 @@ class YuanbaoExporter:
             if result.status == "success"
         )
 
-        failed = len(results) - success
+        failed = (
+                len(results)
+                - success
+        )
+
         batch_id = (
             results[0].batch_id
             if results
@@ -143,13 +296,16 @@ class YuanbaoExporter:
             "failed": failed,
         }
 
-        self._write_json(path, manifest)
+        self._write_json(
+            path,
+            manifest,
+        )
 
     def _write_json(
             self,
             path: Path,
             data,
-    ):
+    ) -> None:
 
         with open(
                 path,
