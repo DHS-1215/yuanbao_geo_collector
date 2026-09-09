@@ -5,7 +5,10 @@ import time
 from dataclasses import dataclass
 
 from app.yuanbao.client import YuanbaoClient
-from app.yuanbao.result import YuanbaoCollectionResult
+from app.yuanbao.result import (
+    YuanbaoCollectionResult,
+    utc_now_iso,
+)
 from app.yuanbao.types import (
     MODEL_MODE_COMPATIBILITY,
     YuanbaoMode,
@@ -85,6 +88,8 @@ class YuanbaoBatchRunner:
         self.config = client.config
         self.batch_id = batch_id
         self.product = product
+        self.started_at = ""
+        self.finished_at = ""
 
     def run_task(
             self,
@@ -122,47 +127,54 @@ class YuanbaoBatchRunner:
             self,
             tasks: list[YuanbaoTask],
     ) -> list[YuanbaoCollectionResult]:
+
         results = []
 
-        for index, task in enumerate(tasks):
-            print(
-                "=" * 80
-            )
+        self.started_at = utc_now_iso()
 
-            print(
-                f"[TASK {index + 1}/{len(tasks)}]"
-            )
-
-            print(
-                task.question
-            )
-
-            result = self.run_task(
-                task
-            )
-
-            results.append(
-                result
-            )
-
-            print(
-                f"STATUS: {result.status}"
-            )
-
-            if (
-                    result.status == "failed"
-                    and result.error
-            ):
+        try:
+            for index, task in enumerate(tasks):
                 print(
-                    f"ERROR: {result.error}"
+                    "=" * 80
                 )
 
-            if index < len(tasks) - 1:
-                time.sleep(
-                    random.uniform(
-                        self.config.task_delay_min,
-                        self.config.task_delay_max,
-                    )
+                print(
+                    f"[TASK {index + 1}/{len(tasks)}]"
                 )
+
+                print(
+                    task.question
+                )
+
+                result = self.run_task(
+                    task
+                )
+
+                results.append(
+                    result
+                )
+
+                print(
+                    f"STATUS: {result.status}"
+                )
+
+                if (
+                        result.status == "failed"
+                        and result.error
+                ):
+                    print(
+                        f"ERROR: {result.error}"
+                    )
+
+                if index < len(tasks) - 1:
+                    time.sleep(
+                        random.uniform(
+                            self.config.task_delay_min,
+                            self.config.task_delay_max,
+                        )
+                    )
+
+        finally:
+            self.finished_at = utc_now_iso()
 
         return results

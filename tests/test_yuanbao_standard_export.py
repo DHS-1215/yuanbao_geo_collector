@@ -396,3 +396,152 @@ def test_empty_sources_still_create_sources_jsonl(
     )
 
     assert rows == []
+
+
+def test_export_writes_standard_manifest(
+        tmp_path,
+):
+    result = build_result()
+
+    YuanbaoExporter().export(
+        [result],
+        str(tmp_path),
+        started_at=(
+            "2026-09-09T01:00:00+00:00"
+        ),
+        finished_at=(
+            "2026-09-09T01:10:00+00:00"
+        ),
+    )
+
+    with open(
+            tmp_path / "manifest.json",
+            "r",
+            encoding="utf-8",
+    ) as f:
+        manifest = json.load(f)
+
+    assert (
+            manifest["schema_version"]
+            == "geo_package_v1"
+    )
+
+    assert (
+            manifest["geo_batch_version"]
+            == "geo_batch_v1"
+    )
+
+    assert (
+            manifest["platform_code"]
+            == "yuanbao"
+    )
+
+    assert (
+            manifest["platform_name"]
+            == "腾讯元宝"
+    )
+
+    assert (
+            manifest["product_id"]
+            == "hongmao_yaojiu"
+    )
+
+    assert (
+            manifest["product_name"]
+            == "鸿茅药酒"
+    )
+
+    assert (
+            manifest["batch_id"]
+            == "batch_test_001"
+    )
+
+    assert (
+            manifest["collector_version"]
+            == "0.1.0"
+    )
+
+    assert manifest["status"] == "PASS"
+
+    assert (
+            manifest["started_at"]
+            == "2026-09-09T01:00:00+00:00"
+    )
+
+    assert (
+            manifest["finished_at"]
+            == "2026-09-09T01:10:00+00:00"
+    )
+
+    capabilities = (
+        manifest["capabilities"]
+    )
+
+    assert (
+            capabilities["supports_sources"]
+            is True
+    )
+
+    assert (
+            capabilities[
+                "supports_multiple_modes"
+            ]
+            is True
+    )
+
+    assert (
+            capabilities[
+                "supports_screenshot"
+            ]
+            is False
+    )
+
+
+def test_manifest_failed_task_has_warnings(
+        tmp_path,
+):
+    success = build_result(
+        task_id="yb_t_success",
+    )
+
+    failed = build_result(
+        task_id="yb_t_failed",
+    )
+
+    failed.status = "failed"
+    failed.acquisition_status = "failed"
+    failed.is_complete = False
+    failed.answer = ""
+    failed.error = "测试失败"
+
+    YuanbaoExporter().export(
+        [success, failed],
+        str(tmp_path),
+    )
+
+    with open(
+            tmp_path / "manifest.json",
+            "r",
+            encoding="utf-8",
+    ) as f:
+        manifest = json.load(f)
+
+    assert (
+            manifest["status"]
+            == "PASS_WITH_WARNINGS"
+    )
+
+    assert (
+            manifest["task_count"]
+            == 2
+    )
+
+    assert (
+            manifest["success_tasks"]
+            == 1
+    )
+
+    assert (
+            manifest["failed_tasks"]
+            == 1
+    )

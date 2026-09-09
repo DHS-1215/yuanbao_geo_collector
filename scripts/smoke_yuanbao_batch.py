@@ -61,7 +61,9 @@ def main():
 
         exporter.export(
             results,
-            "output/test_batch"
+            "output/test_batch",
+            started_at=runner.started_at,
+            finished_at=runner.finished_at,
         )
 
         print()

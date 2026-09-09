@@ -5,7 +5,13 @@ from pathlib import Path
 
 from app.yuanbao.checksum import generate_checksums
 from app.yuanbao.geo_contract import (
+    COLLECTOR_VERSION,
+    DEFAULT_PRODUCT_ID,
+    DEFAULT_PRODUCT_NAME,
+    GEO_BATCH_VERSION,
+    GEO_SCHEMA_VERSION,
     YUANBAO_PLATFORM_CODE,
+    YUANBAO_PLATFORM_NAME,
     build_answer_id,
     build_occurrence_id,
 )
@@ -18,6 +24,8 @@ class YuanbaoExporter:
             self,
             results: list[YuanbaoCollectionResult],
             output_dir: str,
+            started_at: str = "",
+            finished_at: str = "",
     ) -> None:
 
         output = Path(output_dir)
@@ -58,6 +66,8 @@ class YuanbaoExporter:
         self._save_manifest(
             results,
             output / "manifest.json",
+            started_at=started_at,
+            finished_at=finished_at,
         )
 
         checksum_files = [
@@ -349,6 +359,8 @@ class YuanbaoExporter:
             self,
             results: list[YuanbaoCollectionResult],
             path: Path,
+            started_at: str = "",
+            finished_at: str = "",
     ) -> None:
 
         success = sum(
@@ -368,20 +380,82 @@ class YuanbaoExporter:
             else ""
         )
 
-        product = (
-            results[0].product
-            if results
-            else ""
+        collection_modes = sorted(
+            {
+                result.mode_code
+                for result in results
+                if result.mode_code
+            }
+        )
+
+        source_count = sum(
+            1
+            for result in results
+            for source in result.sources
+            if source.url.strip()
         )
 
         manifest = {
+            "schema_version": (
+                GEO_SCHEMA_VERSION
+            ),
+            "geo_batch_version": (
+                GEO_BATCH_VERSION
+            ),
+
+            "platform_code": (
+                YUANBAO_PLATFORM_CODE
+            ),
+            "platform_name": (
+                YUANBAO_PLATFORM_NAME
+            ),
+
+            "product_id": (
+                DEFAULT_PRODUCT_ID
+            ),
+            "product_name": (
+                DEFAULT_PRODUCT_NAME
+            ),
+
             "batch_id": batch_id,
-            "platform": "yuanbao",
-            "product": product,
-            "total": len(results),
-            "success": success,
-            "failed": failed,
+
+            "collector_version": (
+                COLLECTOR_VERSION
+            ),
+
+            "capabilities": {
+                "supports_sources": True,
+                "supports_multiple_modes": True,
+                "supports_screenshot": False,
+            },
+
+            "status": (
+                "PASS"
+                if failed == 0
+                else "PASS_WITH_WARNINGS"
+            ),
+
+            "task_count": len(results),
+            "answer_count": len(results),
+            "source_count": source_count,
+
+            "success_tasks": success,
+            "failed_tasks": failed,
+
+            "collection_modes": (
+                collection_modes
+            ),
         }
+
+        if started_at:
+            manifest[
+                "started_at"
+            ] = started_at
+
+        if finished_at:
+            manifest[
+                "finished_at"
+            ] = finished_at
 
         self._write_json(
             path,
