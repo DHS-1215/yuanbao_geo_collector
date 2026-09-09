@@ -6,7 +6,10 @@ from app.core.config import get_settings
 
 from app.yuanbao.client import YuanbaoClient
 from app.yuanbao.loader import load_questions
-from app.yuanbao.runner import YuanbaoBatchRunner
+from app.yuanbao.runner import (
+    YuanbaoBatchRunner,
+    build_geo_tasks
+)
 from app.yuanbao.exporter import YuanbaoExporter
 
 
@@ -32,8 +35,12 @@ def main():
             answer_timeout_seconds=180,
         )
 
-        tasks = load_questions(
+        questions = load_questions(
             "input/questions.csv"
+        )
+
+        tasks = build_geo_tasks(
+            questions
         )
 
         runner = YuanbaoBatchRunner(

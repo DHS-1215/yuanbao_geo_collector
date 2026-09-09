@@ -1,17 +1,13 @@
 import csv
 from app.yuanbao.geo_contract import build_question_id
 
-from app.yuanbao.runner import YuanbaoTask
-from app.yuanbao.types import (
-    YuanbaoMode,
-    YuanbaoModel,
-)
+from app.yuanbao.runner import YuanbaoQuestion
 
 
 def load_questions(
         path: str,
-) -> list[YuanbaoTask]:
-    tasks = []
+) -> list[YuanbaoQuestion]:
+    questions = []
 
     with open(
             path,
@@ -31,13 +27,11 @@ def load_questions(
                 question=question,
             )
 
-            tasks.append(
-                YuanbaoTask(
+            questions.append(
+                YuanbaoQuestion(
                     question_id=question_id,
                     question=question,
-                    model=YuanbaoModel.HY3,
-                    mode=YuanbaoMode.EXPERT,
                 )
             )
 
-    return tasks
+    return questions

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from app.yuanbao.client import YuanbaoClient
 from app.yuanbao.result import YuanbaoCollectionResult
 from app.yuanbao.types import (
+    MODEL_MODE_COMPATIBILITY,
     YuanbaoMode,
     YuanbaoModel,
 )
@@ -17,6 +18,12 @@ from app.yuanbao.geo_contract import (
 )
 
 
+@dataclass(frozen=True)
+class YuanbaoQuestion:
+    question_id: str
+    question: str
+
+
 @dataclass
 class YuanbaoTask:
     question_id: str
@@ -24,6 +31,46 @@ class YuanbaoTask:
     model: YuanbaoModel
     mode: YuanbaoMode
     task_id: str = ""
+
+
+def build_geo_tasks(
+        questions: list[YuanbaoQuestion],
+        model: YuanbaoModel = YuanbaoModel.HY3,
+        modes: tuple[YuanbaoMode, ...] = (
+                YuanbaoMode.QUICK,
+                YuanbaoMode.EXPERT,
+        ),
+) -> list[YuanbaoTask]:
+    tasks: list[YuanbaoTask] = []
+
+    supported_modes = (
+        MODEL_MODE_COMPATIBILITY[model]
+    )
+
+    for mode in modes:
+        # 同时验证：
+        # 1. 是否属于 GEO v1 正式模式
+        # 2. 当前模型是否支持该模式
+        to_geo_mode(mode)
+
+        if mode not in supported_modes:
+            raise ValueError(
+                "腾讯元宝不支持该模型/模式组合："
+                f"{model.value} + {mode.value}"
+            )
+
+    for question in questions:
+        for mode in modes:
+            tasks.append(
+                YuanbaoTask(
+                    question_id=question.question_id,
+                    question=question.question,
+                    model=model,
+                    mode=mode,
+                )
+            )
+
+    return tasks
 
 
 class YuanbaoBatchRunner:

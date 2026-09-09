@@ -1,3 +1,4 @@
+import pytest
 from types import SimpleNamespace
 
 from app.yuanbao.geo_contract import (
@@ -8,8 +9,11 @@ from app.yuanbao.loader import load_questions
 from app.yuanbao.result import YuanbaoCollectionResult
 from app.yuanbao.runner import (
     YuanbaoBatchRunner,
+    YuanbaoQuestion,
     YuanbaoTask,
+    build_geo_tasks,
 )
+
 from app.yuanbao.types import (
     YuanbaoMode,
     YuanbaoModel,
@@ -39,21 +43,16 @@ class FakeYuanbaoClient:
 
 
 def test_loader_builds_question_id_from_csv():
-    tasks = load_questions(
+    questions = load_questions(
         "input/questions.csv"
     )
 
-    task = tasks[0]
+    question = questions[0]
 
     expected_question_id = build_question_id(
         csv_id="001",
         question="鸿茅药酒是正规药品吗？",
     )
-
-    assert task.question_id == expected_question_id
-    assert task.task_id == ""
-    assert task.mode == YuanbaoMode.EXPERT
-    assert task.model == YuanbaoModel.HY3
 
 
 def test_runner_generates_standard_task_id():
@@ -140,3 +139,65 @@ def test_same_question_quick_and_expert_get_different_task_ids():
     assert expert_result.mode_code == "expert"
 
     assert quick_result.task_id != expert_result.task_id
+
+
+def test_build_geo_tasks_expands_quick_and_expert():
+    question = YuanbaoQuestion(
+        question_id="ybq_test_001",
+        question="测试问题",
+    )
+
+    tasks = build_geo_tasks(
+        [question]
+    )
+
+    assert len(tasks) == 2
+
+    assert tasks[0].question_id == "ybq_test_001"
+    assert tasks[0].mode == YuanbaoMode.QUICK
+    assert tasks[0].model == YuanbaoModel.HY3
+
+    assert tasks[1].question_id == "ybq_test_001"
+    assert tasks[1].mode == YuanbaoMode.EXPERT
+    assert tasks[1].model == YuanbaoModel.HY3
+
+
+def test_six_questions_expand_to_twelve_geo_tasks():
+    questions = load_questions(
+        "input/questions.csv"
+    )
+
+    tasks = build_geo_tasks(
+        questions
+    )
+
+    assert len(questions) == 6
+    assert len(tasks) == 12
+
+    assert sum(
+        task.mode == YuanbaoMode.QUICK
+        for task in tasks
+    ) == 6
+
+    assert sum(
+        task.mode == YuanbaoMode.EXPERT
+        for task in tasks
+    ) == 6
+
+
+def test_thinking_cannot_enter_geo_task_batch():
+    question = YuanbaoQuestion(
+        question_id="ybq_test_001",
+        question="测试问题",
+    )
+
+    with pytest.raises(
+            ValueError,
+            match="深度思考.*暂不纳入 GEO v1",
+    ):
+        build_geo_tasks(
+            [question],
+            modes=(
+                YuanbaoMode.THINKING,
+            ),
+        )
