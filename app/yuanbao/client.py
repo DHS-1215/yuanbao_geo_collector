@@ -40,6 +40,10 @@ from app.yuanbao.source import YuanbaoSource
 
 from app.yuanbao.extractor import YuanbaoSourceExtractor
 
+from app.yuanbao.risk_control import (
+    find_risk_control_marker,
+)
+
 from app.yuanbao.selectors import (
     REFERENCE_CARD_SELECTOR,
     REFERENCE_CLOSE_SELECTOR,
@@ -80,6 +84,145 @@ class YuanbaoClient:
 
         return answer
 
+    def detect_risk_control(
+            self,
+            error_message: str = "",
+    ) -> str | None:
+
+        marker = find_risk_control_marker(
+            error_message
+        )
+
+        if marker:
+            return marker
+
+        try:
+            body_text = (
+                self.page
+                .locator("body")
+                .inner_text(
+                    timeout=1000
+                )
+            )
+
+        except Exception:
+            return None
+
+        return find_risk_control_marker(
+            body_text
+        )
+
+    def recover_after_risk_control(
+            self,
+    ) -> bool:
+        """
+        风控冷却结束后的页面恢复检查。
+
+        这里只做正常页面恢复：
+        1. 检查页面是否仍可用
+        2. 清理残留菜单 / 信源抽屉
+        3. 检查是否仍存在明确风控提示
+        4. 检查输入框
+        5. 必要时最多刷新页面一次
+
+        不处理验证码，也不绕过平台限制。
+        """
+
+        if self.page.is_closed():
+            return False
+
+        # 先尽量清理残留 UI。
+        try:
+            self._close_sources()
+        except Exception:
+            pass
+
+        try:
+            self._close_profile_menu()
+        except Exception:
+            pass
+
+        # 风控提示如果仍然存在，
+        # 当前页面就不应该继续发送请求。
+        risk_marker = (
+            self.detect_risk_control()
+        )
+
+        if risk_marker:
+            print(
+                "[RISK CONTROL] "
+                "冷却后页面仍存在风控提示："
+                f"{risk_marker}"
+            )
+
+            return False
+
+        if self._input_is_ready():
+            return True
+
+        print(
+            "[RISK CONTROL] "
+            "输入区域尚未恢复，"
+            "尝试刷新页面一次"
+        )
+
+        try:
+            self.page.reload(
+                wait_until="domcontentloaded",
+                timeout=10000,
+            )
+
+        except Exception as e:
+            print(
+                "[RISK CONTROL] "
+                f"页面刷新失败：{e}"
+            )
+
+            return False
+
+        try:
+            self.page.wait_for_timeout(
+                1000
+            )
+
+        except Exception:
+            return False
+
+        # 刷新后重新检查风控，
+        # 避免页面虽然能打开，
+        # 但仍然处于限制状态。
+        risk_marker = (
+            self.detect_risk_control()
+        )
+
+        if risk_marker:
+            print(
+                "[RISK CONTROL] "
+                "页面刷新后仍存在风控提示："
+                f"{risk_marker}"
+            )
+
+            return False
+
+        return self._input_is_ready()
+
+    def _input_is_ready(
+            self,
+    ) -> bool:
+
+        try:
+            editor = self.page.locator(
+                INPUT_SELECTOR
+            ).first
+
+            if editor.count() == 0:
+                return False
+
+            return editor.is_visible()
+
+        except Exception:
+            return False
+
     def collect(
             self,
             question: str,
@@ -99,22 +242,101 @@ class YuanbaoClient:
                 question
             )
 
+
         except Exception as e:
+
+            error_message = str(e)
+
+            risk_marker = (
+
+                self.detect_risk_control(
+
+                    error_message
+
+                )
+
+            )
+
+            acquisition_status = (
+
+                "risk_control"
+
+                if risk_marker
+
+                else "failed"
+
+            )
+
+            if risk_marker:
+
+                risk_message = (
+
+                    f"检测到腾讯元宝风控："
+
+                    f"{risk_marker}"
+
+                )
+
+                if error_message:
+
+                    error_message = (
+
+                        f"{error_message} | "
+
+                        f"{risk_message}"
+
+                    )
+
+                else:
+
+                    error_message = (
+
+                        risk_message
+
+                    )
+
             return YuanbaoCollectionResult(
+
                 question=question,
+
                 answer="",
+
                 model=model.value,
+
                 mode=mode.value,
+
                 conversation_url=self.page.url,
+
                 sources=[],
+
                 status="failed",
-                error=str(e),
-                acquisition_status="failed",
-                validation_status="NOT_APPLICABLE",
+
+                error=error_message,
+
+                acquisition_status=(
+
+                    acquisition_status
+
+                ),
+
+                validation_status=(
+
+                    "NOT_APPLICABLE"
+
+                ),
+
                 is_complete=False,
-                source_collection_status="failed",
+
+                source_collection_status=(
+
+                    "failed"
+
+                ),
+
                 source_count_raw=0,
+
                 collected_at=utc_now_iso(),
+
             )
 
         source_collection_status = "success"

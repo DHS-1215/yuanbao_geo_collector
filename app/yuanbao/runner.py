@@ -166,37 +166,17 @@ class YuanbaoBatchRunner:
             task: YuanbaoTask,
     ) -> YuanbaoCollectionResult:
 
-        max_attempts = (
-            max(
-                1,
-                self.config.task_retry_max + 1,
-            )
-        )
+        ordinary_retries_used = 0
+        risk_retries_used = 0
+        attempt = 0
 
         last_result: (
                 YuanbaoCollectionResult
                 | None
         ) = None
 
-        for attempt in range(
-                1,
-                max_attempts + 1,
-        ):
-
-            if attempt > 1:
-                delay = random.uniform(
-                    self.config.task_retry_delay_min,
-                    self.config.task_retry_delay_max,
-                )
-
-                print(
-                    f"[RETRY] 等待 "
-                    f"{delay:.1f}s 后重试"
-                )
-
-                time.sleep(
-                    delay
-                )
+        while True:
+            attempt += 1
 
             try:
                 result = self.run_task(
@@ -205,9 +185,8 @@ class YuanbaoBatchRunner:
 
             except Exception as e:
                 # 最后一层 runner 兜底。
-                # KeyboardInterrupt 不属于 Exception，
-                # 因此 Ctrl+C 仍会正常进入
-                # checkpoint interrupted 流程。
+                # KeyboardInterrupt 属于 BaseException，
+                # 不会在这里被吞掉。
                 mode_code = (
                     self.prepare_task_identity(
                         task
@@ -270,8 +249,7 @@ class YuanbaoBatchRunner:
             if succeeded:
                 if attempt > 1:
                     print(
-                        f"[RETRY] 第 "
-                        f"{attempt}/{max_attempts} "
+                        f"[RETRY] 第 {attempt} "
                         "次尝试成功"
                     )
 
@@ -282,26 +260,155 @@ class YuanbaoBatchRunner:
                     or "采集结果不完整"
             )
 
+            is_risk_control = (
+                    result.acquisition_status
+                    == "risk_control"
+            )
+
+            if is_risk_control:
+                print(
+                    "[RISK CONTROL] "
+                    f"检测到风控：{error_message}"
+                )
+
+                max_risk_retries = max(
+                    0,
+                    getattr(
+                        self.config,
+                        "risk_control_retry_max",
+                        1,
+                    ),
+                )
+
+                if (
+                        risk_retries_used
+                        >= max_risk_retries
+                ):
+                    print(
+                        "[RISK CONTROL] "
+                        "已达到最大恢复次数，"
+                        "停止继续撞击页面"
+                    )
+
+                    return result
+
+                risk_retries_used += 1
+
+                delay = random.uniform(
+                    getattr(
+                        self.config,
+                        "risk_control_delay_min",
+                        60.0,
+                    ),
+                    getattr(
+                        self.config,
+                        "risk_control_delay_max",
+                        120.0,
+                    ),
+                )
+
+                print(
+                    "[RISK CONTROL] "
+                    f"进入冷却 {delay:.1f}s"
+                )
+
+                print(
+                    "[RISK CONTROL] "
+                    f"冷却后进行第 "
+                    f"{risk_retries_used}/"
+                    f"{max_risk_retries} "
+                    "次恢复尝试"
+                )
+
+                time.sleep(
+                    delay
+                )
+
+                recovery = getattr(
+                    self.client,
+                    "recover_after_risk_control",
+                    None,
+                )
+
+                if recovery is not None:
+                    try:
+                        recovered = bool(
+                            recovery()
+                        )
+
+                    except Exception as e:
+                        print(
+                            "[RISK CONTROL] "
+                            "页面恢复检查异常："
+                            f"{e}"
+                        )
+
+                        recovered = False
+
+                    if not recovered:
+                        print(
+                            "[RISK CONTROL] "
+                            "页面仍未恢复，"
+                            "停止当前任务继续请求"
+                        )
+
+                        return result
+
+                    print(
+                        "[RISK CONTROL] "
+                        "页面状态已恢复，"
+                        "准备重新执行当前任务"
+                    )
+
+                continue
+
             print(
-                f"[RETRY] 第 "
-                f"{attempt}/{max_attempts} "
+                f"[RETRY] 第 {attempt} "
                 f"次尝试失败："
                 f"{error_message}"
             )
 
-            if attempt < max_attempts:
+            max_ordinary_retries = max(
+                0,
+                self.config.task_retry_max,
+            )
+
+            if (
+                    ordinary_retries_used
+                    >= max_ordinary_retries
+            ):
                 print(
-                    "[RETRY] 准备重新执行当前任务"
+                    "[RETRY] "
+                    "已达到最大普通重试次数，"
+                    "当前任务保留为 failed"
                 )
 
+                return result
+
+            ordinary_retries_used += 1
+
+            delay = random.uniform(
+                self.config.task_retry_delay_min,
+                self.config.task_retry_delay_max,
+            )
+
+            print(
+                f"[RETRY] 等待 "
+                f"{delay:.1f}s 后重试"
+            )
+
+            print(
+                f"[RETRY] 准备进行第 "
+                f"{ordinary_retries_used}/"
+                f"{max_ordinary_retries} "
+                "次普通重试"
+            )
+
+            time.sleep(
+                delay
+            )
+
         assert last_result is not None
-
-        print(
-            "[RETRY] 已达到最大尝试次数，"
-            "当前任务保留为 failed"
-        )
-
-        return last_result
 
     def run(
             self,
