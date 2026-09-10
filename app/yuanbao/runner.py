@@ -19,6 +19,9 @@ from app.yuanbao.geo_contract import (
     build_task_id,
     to_geo_mode,
 )
+from app.yuanbao.checkpoint import (
+    YuanbaoCheckpointStore,
+)
 
 
 @dataclass(frozen=True)
@@ -83,30 +86,50 @@ class YuanbaoBatchRunner:
             client: YuanbaoClient,
             batch_id: str,
             product: str,
+            checkpoint_store: (
+                    YuanbaoCheckpointStore
+                    | None
+            ) = None,
     ):
         self.client = client
         self.config = client.config
         self.batch_id = batch_id
         self.product = product
+
+        self.checkpoint_store = (
+            checkpoint_store
+        )
+
         self.started_at = ""
         self.finished_at = ""
+
+    def prepare_task_identity(
+            self,
+            task: YuanbaoTask,
+    ) -> str:
+
+        mode_code = to_geo_mode(
+            task.mode
+        )
+
+        task.task_id = build_task_id(
+            batch_id=self.batch_id,
+            question_id=task.question_id,
+            mode_code=mode_code,
+        )
+
+        return mode_code
 
     def run_task(
             self,
             task: YuanbaoTask,
     ) -> YuanbaoCollectionResult:
 
-        mode_code = to_geo_mode(
-            task.mode
+        mode_code = (
+            self.prepare_task_identity(
+                task
+            )
         )
-
-        task_id = build_task_id(
-            batch_id=self.batch_id,
-            question_id=task.question_id,
-            mode_code=mode_code,
-        )
-
-        task.task_id = task_id
 
         result = self.client.collect(
             question=task.question,
@@ -114,45 +137,271 @@ class YuanbaoBatchRunner:
             mode=task.mode,
         )
 
-        result.question_id = task.question_id
-        result.task_id = task.task_id
-        result.mode_code = mode_code
-        result.batch_id = self.batch_id
-        result.product = self.product
+        result.question_id = (
+            task.question_id
+        )
+
+        result.task_id = (
+            task.task_id
+        )
+
+        result.mode_code = (
+            mode_code
+        )
+
+        result.batch_id = (
+            self.batch_id
+        )
+
+        result.product = (
+            self.product
+        )
+
         result.platform = "yuanbao"
 
         return result
+
+    def run_task_with_retry(
+            self,
+            task: YuanbaoTask,
+    ) -> YuanbaoCollectionResult:
+
+        max_attempts = (
+            max(
+                1,
+                self.config.task_retry_max + 1,
+            )
+        )
+
+        last_result: (
+                YuanbaoCollectionResult
+                | None
+        ) = None
+
+        for attempt in range(
+                1,
+                max_attempts + 1,
+        ):
+
+            if attempt > 1:
+                delay = random.uniform(
+                    self.config.task_retry_delay_min,
+                    self.config.task_retry_delay_max,
+                )
+
+                print(
+                    f"[RETRY] 等待 "
+                    f"{delay:.1f}s 后重试"
+                )
+
+                time.sleep(
+                    delay
+                )
+
+            try:
+                result = self.run_task(
+                    task
+                )
+
+            except Exception as e:
+                # 最后一层 runner 兜底。
+                # KeyboardInterrupt 不属于 Exception，
+                # 因此 Ctrl+C 仍会正常进入
+                # checkpoint interrupted 流程。
+                mode_code = (
+                    self.prepare_task_identity(
+                        task
+                    )
+                )
+
+                page = getattr(
+                    self.client,
+                    "page",
+                    None,
+                )
+
+                conversation_url = getattr(
+                    page,
+                    "url",
+                    "",
+                )
+
+                result = YuanbaoCollectionResult(
+                    question=task.question,
+                    answer="",
+                    model=task.model.value,
+                    mode=task.mode.value,
+                    conversation_url=(
+                        conversation_url
+                    ),
+                    sources=[],
+                    status="failed",
+                    error=(
+                        "Runner 未捕获异常："
+                        f"{e}"
+                    ),
+                    task_id=task.task_id,
+                    question_id=(
+                        task.question_id
+                    ),
+                    mode_code=mode_code,
+                    batch_id=self.batch_id,
+                    product=self.product,
+                    platform="yuanbao",
+                    acquisition_status="failed",
+                    validation_status=(
+                        "NOT_APPLICABLE"
+                    ),
+                    is_complete=False,
+                    source_collection_status=(
+                        "failed"
+                    ),
+                    source_count_raw=0,
+                    collected_at=utc_now_iso(),
+                )
+
+            last_result = result
+
+            succeeded = (
+                    result.status == "success"
+                    and result.is_complete
+            )
+
+            if succeeded:
+                if attempt > 1:
+                    print(
+                        f"[RETRY] 第 "
+                        f"{attempt}/{max_attempts} "
+                        "次尝试成功"
+                    )
+
+                return result
+
+            error_message = (
+                    result.error
+                    or "采集结果不完整"
+            )
+
+            print(
+                f"[RETRY] 第 "
+                f"{attempt}/{max_attempts} "
+                f"次尝试失败："
+                f"{error_message}"
+            )
+
+            if attempt < max_attempts:
+                print(
+                    "[RETRY] 准备重新执行当前任务"
+                )
+
+        assert last_result is not None
+
+        print(
+            "[RETRY] 已达到最大尝试次数，"
+            "当前任务保留为 failed"
+        )
+
+        return last_result
 
     def run(
             self,
             tasks: list[YuanbaoTask],
     ) -> list[YuanbaoCollectionResult]:
 
-        results = []
+        results: list[
+            YuanbaoCollectionResult
+        ] = []
 
-        self.started_at = utc_now_iso()
+        if self.checkpoint_store:
+            self.started_at = (
+                self.checkpoint_store
+                .initialize(
+                    product=self.product,
+                    planned_count=len(tasks),
+                )
+            )
+
+        else:
+            self.started_at = (
+                utc_now_iso()
+            )
 
         try:
-            for index, task in enumerate(tasks):
+            for index, task in enumerate(
+                    tasks
+            ):
                 print(
                     "=" * 80
                 )
 
                 print(
-                    f"[TASK {index + 1}/{len(tasks)}]"
+                    f"[TASK "
+                    f"{index + 1}/"
+                    f"{len(tasks)}]"
                 )
 
                 print(
                     task.question
                 )
 
-                result = self.run_task(
+                self.prepare_task_identity(
                     task
+                )
+
+                cached_result = None
+
+                if self.checkpoint_store:
+                    cached_result = (
+                        self.checkpoint_store
+                        .load_result(
+                            task.task_id
+                        )
+                    )
+
+                if (
+                        cached_result
+                        is not None
+                        and
+                        cached_result.status
+                        == "success"
+                        and
+                        cached_result.is_complete
+                ):
+                    print(
+                        "[CHECKPOINT] "
+                        "已有成功结果，跳过"
+                    )
+
+                    print(
+                        f"STATUS: "
+                        f"{cached_result.status}"
+                    )
+
+                    results.append(
+                        cached_result
+                    )
+
+                    continue
+
+                result = (
+                    self.run_task_with_retry(
+                        task
+                    )
                 )
 
                 results.append(
                     result
                 )
+
+                if self.checkpoint_store:
+                    self.checkpoint_store.save_result(
+                        result
+                    )
+
+                    print(
+                        "[CHECKPOINT] "
+                        "结果已保存"
+                    )
 
                 print(
                     f"STATUS: {result.status}"
@@ -174,7 +423,33 @@ class YuanbaoBatchRunner:
                         )
                     )
 
-        finally:
-            self.finished_at = utc_now_iso()
+            self.finished_at = (
+                utc_now_iso()
+            )
 
-        return results
+            if self.checkpoint_store:
+                self.checkpoint_store.mark_completed(
+                    results=results,
+                    finished_at=(
+                        self.finished_at
+                    ),
+                )
+
+            return results
+
+        except BaseException:
+            self.finished_at = (
+                utc_now_iso()
+            )
+
+            if self.checkpoint_store:
+                (
+                    self.checkpoint_store
+                    .mark_interrupted(
+                        finished_at=(
+                            self.finished_at
+                        )
+                    )
+                )
+
+            raise

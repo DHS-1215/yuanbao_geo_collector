@@ -20,6 +20,9 @@ class FakeClient:
         self.config = SimpleNamespace(
             task_delay_min=0,
             task_delay_max=0,
+            task_retry_max=0,
+            task_retry_delay_min=0,
+            task_retry_delay_max=0,
         )
 
     def collect(
