@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import shutil
@@ -89,8 +89,24 @@ class YuanbaoExporter:
             output / "sources.jsonl",
         ]
 
+        screenshots_dir = (
+            output
+            / "screenshots"
+        )
+
+        if screenshots_dir.is_dir():
+            checksum_files.extend(
+                sorted(
+                    path
+                    for path
+                    in screenshots_dir.rglob("*.png")
+                    if path.is_file()
+                )
+            )
+
         checksums = generate_checksums(
-            checksum_files
+            checksum_files,
+            base_dir=output,
         )
 
         self._write_json(
@@ -641,3 +657,5 @@ class YuanbaoExporter:
                 ensure_ascii=False,
                 indent=2,
             )
+
+

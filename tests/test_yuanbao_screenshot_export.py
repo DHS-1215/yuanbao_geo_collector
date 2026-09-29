@@ -255,6 +255,27 @@ def test_exporter_copies_screenshot_and_writes_reference(
         is True
     )
 
+    checksums = json.loads(
+        (
+            output
+            / "checksums.json"
+        ).read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert (
+        screenshot_ref
+        in checksums["files"]
+    )
+
+    assert (
+        checksums["files"][
+            screenshot_ref
+        ]
+        == result.screenshot_sha256
+    )
+
 
 def test_exporter_rejects_screenshot_metadata_mismatch(
         tmp_path,
