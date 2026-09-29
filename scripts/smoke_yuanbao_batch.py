@@ -12,7 +12,8 @@ from app.yuanbao.client import YuanbaoClient
 from app.yuanbao.loader import load_questions
 from app.yuanbao.runner import (
     YuanbaoBatchRunner,
-    build_geo_tasks
+    YuanbaoSessionRotate,
+    build_geo_tasks,
 )
 from app.yuanbao.checkpoint import (
     YuanbaoCheckpointStore,
@@ -103,9 +104,28 @@ def main():
 
         print()
 
-        results = runner.run(
-            tasks
-        )
+        try:
+            results = runner.run(
+                tasks
+            )
+
+        except YuanbaoSessionRotate as exc:
+            print()
+            print("=" * 80)
+            print("SESSION ROTATE")
+            print("=" * 80)
+            print(str(exc))
+            print(
+                "[CHECKPOINT] "
+                "Current batch remains resumable."
+            )
+            print(
+                "[NEXT] "
+                "Start a new Chrome session "
+                "and resume this batch."
+            )
+
+            raise SystemExit(4)
 
         exporter = YuanbaoExporter()
 
@@ -134,6 +154,25 @@ def main():
         print(
             f"SUCCESS: {success}"
         )
+
+        failed = (
+                len(results)
+                - success
+        )
+
+        print(
+            f"FAILED: {failed}"
+        )
+
+        if failed > 0:
+            print()
+            print(
+                "[BATCH INCOMPLETE] "
+                "存在未成功任务，"
+                "Checkpoint 已保留。"
+            )
+
+            raise SystemExit(3)
 
 
 def parse_args():

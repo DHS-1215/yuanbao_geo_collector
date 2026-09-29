@@ -11,6 +11,8 @@ PACKAGE_FILES = (
     "checksums.json",
 )
 
+SCREENSHOTS_DIR = "screenshots"
+
 
 def create_package(
         source_dir: str | Path,
@@ -54,5 +56,33 @@ def create_package(
                 file_path,
                 arcname=filename,
             )
+
+        screenshots_dir = (
+            source
+            / SCREENSHOTS_DIR
+        )
+
+        if screenshots_dir.is_dir():
+            screenshot_files = sorted(
+                path
+                for path in screenshots_dir.rglob(
+                    "*.png"
+                )
+                if path.is_file()
+            )
+
+            for screenshot_path in screenshot_files:
+                relative_path = (
+                    screenshot_path
+                    .relative_to(
+                        source
+                    )
+                    .as_posix()
+                )
+
+                zip_file.write(
+                    screenshot_path,
+                    arcname=relative_path,
+                )
 
     return target

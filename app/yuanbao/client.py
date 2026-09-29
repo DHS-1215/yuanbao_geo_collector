@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import random
 import time
@@ -53,6 +53,10 @@ from app.yuanbao.selectors import (
     REFERENCE_SOURCE_SELECTOR,
     REFERENCE_TITLE_SELECTOR,
     SOURCE_TOOL_SELECTOR,
+)
+
+from app.yuanbao.quota import (
+    is_yuanbao_quota_exhausted,
 )
 
 
@@ -111,6 +115,33 @@ class YuanbaoClient:
         return find_risk_control_marker(
             body_text
         )
+
+    def is_ready_after_account_switch(
+            self,
+    ) -> bool:
+        """
+        人工切换账号后检查元宝页面是否已恢复到
+        可以继续采集的状态。
+
+        不负责登录，不处理验证码，
+        只检查当前页面是否可正常继续。
+        """
+
+        try:
+            if self.page.is_closed():
+                return False
+
+            editor = self.page.locator(
+                INPUT_SELECTOR
+            ).first
+
+            return (
+                    editor.count() > 0
+                    and editor.is_visible()
+            )
+
+        except Exception:
+            return False
 
     def recover_after_risk_control(
             self,
@@ -241,6 +272,35 @@ class YuanbaoClient:
             answer = self.ask(
                 question
             )
+
+            if is_yuanbao_quota_exhausted(
+                    answer
+            ):
+                return YuanbaoCollectionResult(
+                    question=question,
+                    answer=answer,
+                    model=model.value,
+                    mode=mode.value,
+                    conversation_url=self.page.url,
+                    sources=[],
+                    status="failed",
+                    error=(
+                        "检测到腾讯元宝账号"
+                        "额度/使用次数已耗尽"
+                    ),
+                    acquisition_status=(
+                        "quota_exhausted"
+                    ),
+                    validation_status=(
+                        "NOT_APPLICABLE"
+                    ),
+                    is_complete=False,
+                    source_collection_status=(
+                        "failed"
+                    ),
+                    source_count_raw=0,
+                    collected_at=utc_now_iso(),
+                )
 
 
         except Exception as e:
@@ -560,15 +620,28 @@ class YuanbaoClient:
         )
 
     def new_chat(self) -> None:
-        new_chat_button = self.page.locator(
-            NEW_CHAT_SELECTOR,
-            has_text="新对话",
-        ).first
+        new_chat_button = None
 
-        new_chat_button.wait_for(
-            state="visible",
-            timeout=5000,
-        )
+        for label in (
+                "新建对话",
+                "新对话",
+        ):
+            candidate = self.page.locator(
+                NEW_CHAT_SELECTOR,
+                has_text=label,
+            ).first
+
+            if (
+                    candidate.count() > 0
+                    and candidate.is_visible()
+            ):
+                new_chat_button = candidate
+                break
+
+        if new_chat_button is None:
+            raise RuntimeError(
+                "没有找到腾讯元宝新建对话入口"
+            )
 
         new_chat_button.click()
         self._random_action_delay()
@@ -792,6 +865,64 @@ class YuanbaoClient:
                 "腾讯元宝模型/模式菜单关闭失败"
             )
 
+    def _dismiss_login_overlay_for_sources(
+            self,
+    ) -> None:
+        """
+        来源采集前处理可能遮挡页面的登录弹窗。
+
+        只尝试正常按 Escape 关闭。
+        如果弹窗仍然存在，则停止来源采集，
+        交给人工确认账号登录状态。
+        """
+        overlays = self.page.locator(
+            ".hyc-login-v2"
+        )
+
+        has_visible_overlay = False
+
+        for index in range(
+                overlays.count()
+        ):
+            item = overlays.nth(index)
+
+            if item.is_visible():
+                has_visible_overlay = True
+                break
+
+        if not has_visible_overlay:
+            return
+
+        print(
+            "[SOURCE] "
+            "检测到登录弹窗遮挡来源入口，"
+            "尝试关闭"
+        )
+
+        self.page.keyboard.press(
+            "Escape"
+        )
+
+        self.page.wait_for_timeout(
+            300
+        )
+
+        for index in range(
+                overlays.count()
+        ):
+            item = overlays.nth(index)
+
+            if item.is_visible():
+                raise RuntimeError(
+                    "腾讯元宝登录弹窗仍在遮挡来源入口，"
+                    "请人工确认账号登录状态后重试"
+                )
+
+        print(
+            "[SOURCE] "
+            "登录弹窗已关闭"
+        )
+
     def _open_sources(self) -> bool:
         tools = self.page.locator(
             SOURCE_TOOL_SELECTOR
@@ -809,7 +940,11 @@ class YuanbaoClient:
         if visible_tool is None:
             return False
 
-        visible_tool.click()
+        self._dismiss_login_overlay_for_sources()
+
+        visible_tool.click(
+            timeout=5000,
+        )
 
         drawer = self.page.locator(
             REFERENCE_DRAWER_SELECTOR
@@ -873,3 +1008,6 @@ class YuanbaoClient:
                 self.config.action_delay_max,
             )
         )
+
+
+

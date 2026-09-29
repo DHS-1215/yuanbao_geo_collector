@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 from app.yuanbao.checksum import generate_checksums
@@ -16,6 +17,9 @@ from app.yuanbao.geo_contract import (
     build_occurrence_id,
 )
 from app.yuanbao.result import YuanbaoCollectionResult
+from app.yuanbao.screenshot import (
+    validate_yuanbao_screenshot,
+)
 
 
 class YuanbaoExporter:
@@ -50,6 +54,11 @@ class YuanbaoExporter:
                 legacy_path.unlink()
 
         # GEO v1 标准数据文件
+        self._export_screenshots(
+            results,
+            output,
+        )
+
         self._save_tasks_jsonl(
             results,
             output / "tasks.jsonl",
@@ -88,6 +97,124 @@ class YuanbaoExporter:
             output / "checksums.json",
             checksums,
         )
+
+    def _relative_screenshot_path(
+            self,
+            result: YuanbaoCollectionResult,
+    ) -> str | None:
+        if not result.screenshot_path:
+            return None
+
+        if not result.task_id:
+            raise ValueError(
+                "Screenshot result has no task_id"
+            )
+
+        return (
+            f"screenshots/"
+            f"{result.task_id}.png"
+        )
+
+    def _export_screenshots(
+            self,
+            results: list[
+                YuanbaoCollectionResult
+            ],
+            output: Path,
+    ) -> None:
+        screenshots_dir = (
+            output
+            / "screenshots"
+        )
+
+        if screenshots_dir.exists():
+            shutil.rmtree(
+                screenshots_dir
+            )
+
+        screenshot_results = [
+            result
+            for result in results
+            if result.screenshot_path
+        ]
+
+        if not screenshot_results:
+            return
+
+        screenshots_dir.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        for result in screenshot_results:
+            source = Path(
+                result.screenshot_path
+            )
+
+            evidence = (
+                validate_yuanbao_screenshot(
+                    source
+                )
+            )
+
+            checks = (
+                (
+                    "screenshot_sha256",
+                    result.screenshot_sha256,
+                    evidence.sha256,
+                ),
+                (
+                    "screenshot_size_bytes",
+                    result.screenshot_size_bytes,
+                    evidence.size_bytes,
+                ),
+                (
+                    "screenshot_width",
+                    result.screenshot_width,
+                    evidence.width,
+                ),
+                (
+                    "screenshot_height",
+                    result.screenshot_height,
+                    evidence.height,
+                ),
+            )
+
+            for (
+                    field_name,
+                    stored_value,
+                    actual_value,
+            ) in checks:
+                if stored_value != actual_value:
+                    raise ValueError(
+                        f"{field_name} mismatch "
+                        f"for {result.task_id}: "
+                        f"stored={stored_value}, "
+                        f"actual={actual_value}"
+                    )
+
+            relative_path = (
+                self._relative_screenshot_path(
+                    result
+                )
+            )
+
+            assert relative_path is not None
+
+            target = (
+                output
+                / relative_path
+            )
+
+            target.parent.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+
+            shutil.copy2(
+                source,
+                target,
+            )
 
     def _save_tasks_jsonl(
             self,
@@ -145,6 +272,24 @@ class YuanbaoExporter:
                     "source_error"
                 ] = result.source_error
 
+            if result.screenshot_path:
+                platform_meta.update(
+                    {
+                        "screenshot_sha256": (
+                            result.screenshot_sha256
+                        ),
+                        "screenshot_size_bytes": (
+                            result.screenshot_size_bytes
+                        ),
+                        "screenshot_width": (
+                            result.screenshot_width
+                        ),
+                        "screenshot_height": (
+                            result.screenshot_height
+                        ),
+                    }
+                )
+
             rows.append(
                 {
                     "answer_id": answer_id,
@@ -173,7 +318,11 @@ class YuanbaoExporter:
                     "source_count_raw": (
                         result.source_count_raw
                     ),
-                    "screenshot_path": None,
+                    "screenshot_path": (
+                        self._relative_screenshot_path(
+                            result
+                        )
+                    ),
                     "platform_meta_json": (
                         platform_meta
                     ),
@@ -399,6 +548,13 @@ class YuanbaoExporter:
             if source.url.strip()
         )
 
+        supports_screenshot = any(
+            bool(
+                result.screenshot_path
+            )
+            for result in results
+        )
+
         manifest = {
             "schema_version": (
                 GEO_SCHEMA_VERSION
@@ -430,7 +586,9 @@ class YuanbaoExporter:
             "capabilities": {
                 "supports_sources": True,
                 "supports_multiple_modes": True,
-                "supports_screenshot": False,
+                "supports_screenshot": (
+                    supports_screenshot
+                ),
             },
 
             "status": (

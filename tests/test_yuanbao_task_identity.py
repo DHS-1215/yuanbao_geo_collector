@@ -1,4 +1,4 @@
-import pytest
+﻿import pytest
 from types import SimpleNamespace
 
 from app.yuanbao.geo_contract import (
@@ -163,9 +163,13 @@ def test_build_geo_tasks_expands_quick_and_expert():
 
 
 def test_six_questions_expand_to_twelve_geo_tasks():
-    questions = load_questions(
-        "input/questions.csv"
-    )
+    questions = [
+        YuanbaoQuestion(
+            question_id=f"ybq_test_{index}",
+            question=f"测试问题 {index}",
+        )
+        for index in range(1, 7)
+    ]
 
     tasks = build_geo_tasks(
         questions
@@ -184,7 +188,6 @@ def test_six_questions_expand_to_twelve_geo_tasks():
         for task in tasks
     ) == 6
 
-
 def test_thinking_cannot_enter_geo_task_batch():
     question = YuanbaoQuestion(
         question_id="ybq_test_001",
@@ -201,3 +204,5 @@ def test_thinking_cannot_enter_geo_task_batch():
                 YuanbaoMode.THINKING,
             ),
         )
+
+

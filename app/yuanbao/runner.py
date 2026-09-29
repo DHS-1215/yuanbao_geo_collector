@@ -3,6 +3,7 @@ from __future__ import annotations
 import random
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 from app.yuanbao.client import YuanbaoClient
 from app.yuanbao.result import (
@@ -21,6 +22,9 @@ from app.yuanbao.geo_contract import (
 )
 from app.yuanbao.checkpoint import (
     YuanbaoCheckpointStore,
+)
+from app.yuanbao.screenshot import (
+    capture_yuanbao_screenshot,
 )
 
 
@@ -79,6 +83,12 @@ def build_geo_tasks(
     return tasks
 
 
+class YuanbaoSessionRotate(
+        RuntimeError
+):
+    """Current Chrome session reached rotation boundary."""
+
+
 class YuanbaoBatchRunner:
 
     def __init__(
@@ -102,6 +112,15 @@ class YuanbaoBatchRunner:
 
         self.started_at = ""
         self.finished_at = ""
+
+        # Count only questions actually collected
+        # in the current Chrome session.
+        # Checkpoint-only skips do not count.
+        self.session_questions_completed = 0
+
+        self._session_touched_question_ids: set[
+            str
+        ] = set()
 
     def prepare_task_identity(
             self,
@@ -260,6 +279,141 @@ class YuanbaoBatchRunner:
                     or "采集结果不完整"
             )
 
+            is_quota_exhausted = (
+                    result.acquisition_status
+                    == "quota_exhausted"
+            )
+
+            if is_quota_exhausted:
+                print()
+                print(
+                    "=" * 60
+                )
+                print(
+                    "[ACCOUNT SWITCH REQUIRED]"
+                )
+                print()
+                print(
+                    "检测到当前腾讯元宝账号"
+                    "额度 / 使用次数已耗尽。"
+                )
+                print()
+                print(
+                    "请在当前 Chrome 中人工操作："
+                )
+                print(
+                    "1. 退出当前腾讯元宝账号"
+                )
+                print(
+                    "2. 登录新的可用账号"
+                )
+                print(
+                    "3. 确认腾讯元宝页面可以正常使用"
+                )
+                print()
+                print(
+                    "完成后回到此窗口："
+                )
+                print(
+                    "输入 R  → 检查并重新执行当前任务"
+                )
+                print(
+                    "输入 Q  → 退出程序并保留 Checkpoint"
+                )
+                print(
+                    "=" * 60
+                )
+
+                while True:
+                    try:
+                        choice = input(
+                            "\n[ACCOUNT SWITCH] "
+                            "请输入 R 或 Q："
+                        ).strip().upper()
+
+                    except EOFError:
+                        choice = "Q"
+
+                    if choice == "Q":
+                        print()
+                        print(
+                            "[ACCOUNT SWITCH] "
+                            "用户选择退出。"
+                        )
+                        print(
+                            "[CHECKPOINT] "
+                            "当前批次将保留，"
+                            "下次启动可继续。"
+                        )
+
+                        # run() 外层已经会对
+                        # BaseException / SystemExit
+                        # 做 interrupted 收尾。
+                        raise SystemExit(2)
+
+                    if choice != "R":
+                        print(
+                            "[ACCOUNT SWITCH] "
+                            "无效输入，请输入 R 或 Q"
+                        )
+                        continue
+
+                    readiness = getattr(
+                        self.client,
+                        "is_ready_after_account_switch",
+                        None,
+                    )
+
+                    if readiness is not None:
+                        try:
+                            ready = bool(
+                                readiness()
+                            )
+
+                        except Exception as e:
+                            print(
+                                "[ACCOUNT SWITCH] "
+                                "页面恢复检查异常："
+                                f"{e}"
+                            )
+
+                            ready = False
+
+                        if not ready:
+                            print()
+                            print(
+                                "[ACCOUNT SWITCH] "
+                                "当前页面尚未恢复。"
+                            )
+                            print(
+                                "请完成账号登录，"
+                                "然后再次输入 R。"
+                            )
+
+                            continue
+
+                    print()
+                    print(
+                        "[ACCOUNT SWITCH] "
+                        "页面已恢复。"
+                    )
+                    print(
+                        "[ACCOUNT SWITCH] "
+                        "重新执行当前任务..."
+                    )
+
+                    # 新账号重新开始时，
+                    # 清空当前任务此前消耗的
+                    # 普通重试 / 风控重试额度。
+                    ordinary_retries_used = 0
+                    risk_retries_used = 0
+
+                    break
+
+                # 回到 while True 顶部，
+                # 重新 run_task(task)。
+                continue
+
             is_risk_control = (
                     result.acquisition_status
                     == "risk_control"
@@ -410,6 +564,182 @@ class YuanbaoBatchRunner:
 
         assert last_result is not None
 
+    def _capture_task_screenshot(
+            self,
+            task: YuanbaoTask,
+            result: YuanbaoCollectionResult,
+    ) -> None:
+        page = getattr(
+            self.client,
+            "page",
+            None,
+        )
+
+        # Lightweight fake clients used by unit tests
+        # may expose a page-like object without
+        # Playwright screenshot support.
+        screenshot_method = getattr(
+            page,
+            "screenshot",
+            None,
+        )
+
+        if not callable(
+                screenshot_method
+        ):
+            return
+
+        output_path = (
+                Path("output")
+                / "screenshots"
+                / self.batch_id
+                / f"{task.task_id}.png"
+        ).resolve()
+
+        screenshot = (
+            capture_yuanbao_screenshot(
+                page,
+                output_path,
+            )
+        )
+
+        result.screenshot_path = str(
+            screenshot.path.resolve()
+        )
+
+        result.screenshot_sha256 = (
+            screenshot.sha256
+        )
+
+        result.screenshot_size_bytes = (
+            screenshot.size_bytes
+        )
+
+        result.screenshot_width = (
+            screenshot.width
+        )
+
+        result.screenshot_height = (
+            screenshot.height
+        )
+
+        print(
+            "[SCREENSHOT]",
+            result.screenshot_path,
+        )
+
+    def _maybe_rotate_session(
+            self,
+            *,
+            tasks: list[YuanbaoTask],
+            index: int,
+            task: YuanbaoTask,
+            results: list[
+                YuanbaoCollectionResult
+            ],
+    ) -> None:
+        limit = max(
+            0,
+            int(
+                getattr(
+                    self.config,
+                    "questions_per_session",
+                    0,
+                )
+            ),
+        )
+
+        if limit <= 0:
+            return
+
+        # quick / expert tasks for one question
+        # are adjacent. Only evaluate the boundary
+        # after the final task of that question.
+        is_last_task_for_question = (
+                index == len(tasks) - 1
+                or
+                tasks[index + 1].question_id
+                != task.question_id
+        )
+
+        if not is_last_task_for_question:
+            return
+
+        # A question fully loaded from Checkpoint
+        # does not consume the current session quota.
+        if (
+                task.question_id
+                not in
+                self._session_touched_question_ids
+        ):
+            return
+
+        question_results = [
+            result
+            for result in results
+            if (
+                    result.question_id
+                    == task.question_id
+            )
+        ]
+
+        question_complete = (
+                bool(question_results)
+                and
+                all(
+                    result.status == "success"
+                    and result.is_complete
+                    for result in question_results
+                )
+        )
+
+        if not question_complete:
+            return
+
+        self.session_questions_completed += 1
+
+        self._session_touched_question_ids.discard(
+            task.question_id
+        )
+
+        print(
+            "[SESSION] "
+            "Completed questions in this session: "
+            f"{self.session_questions_completed}/"
+            f"{limit}"
+        )
+
+        if (
+                self.session_questions_completed
+                < limit
+        ):
+            return
+
+        # If this is already the final task in the batch,
+        # complete normally instead of opening an empty
+        # extra Chrome session.
+        if index >= len(tasks) - 1:
+            return
+
+        print()
+        print("=" * 60)
+        print("[SESSION ROTATE REQUIRED]")
+        print(
+            f"Current Chrome session completed "
+            f"{limit} full questions."
+        )
+        print(
+            "Checkpoint has been saved."
+        )
+        print(
+            "A new Chrome session is required."
+        )
+        print("=" * 60)
+
+        raise YuanbaoSessionRotate(
+            f"Session completed {limit} full questions"
+        )
+
     def run(
             self,
             tasks: list[YuanbaoTask],
@@ -418,6 +748,9 @@ class YuanbaoBatchRunner:
         results: list[
             YuanbaoCollectionResult
         ] = []
+
+        self.session_questions_completed = 0
+        self._session_touched_question_ids.clear()
 
         if self.checkpoint_store:
             self.started_at = (
@@ -488,6 +821,13 @@ class YuanbaoBatchRunner:
                         cached_result
                     )
 
+                    self._maybe_rotate_session(
+                        tasks=tasks,
+                        index=index,
+                        task=task,
+                        results=results,
+                    )
+
                     continue
 
                 result = (
@@ -495,6 +835,35 @@ class YuanbaoBatchRunner:
                         task
                     )
                 )
+
+                if (
+                        result.status == "success"
+                        and result.is_complete
+                ):
+                    try:
+                        self._capture_task_screenshot(
+                            task,
+                            result,
+                        )
+
+                    except Exception as exc:
+                        result.status = "failed"
+
+                        result.error = (
+                            "Screenshot capture failed: "
+                            f"{exc}"
+                        )
+
+                        result.validation_status = (
+                            "SCREENSHOT_FAILED"
+                        )
+
+                        result.is_complete = False
+
+                        print(
+                            "[SCREENSHOT ERROR]",
+                            str(exc),
+                        )
 
                 results.append(
                     result
@@ -521,6 +890,25 @@ class YuanbaoBatchRunner:
                     print(
                         f"ERROR: {result.error}"
                     )
+
+                if (
+                        result.status == "success"
+                        and result.is_complete
+                ):
+                    (
+                        self
+                        ._session_touched_question_ids
+                        .add(
+                            task.question_id
+                        )
+                    )
+
+                self._maybe_rotate_session(
+                    tasks=tasks,
+                    index=index,
+                    task=task,
+                    results=results,
+                )
 
                 if index < len(tasks) - 1:
                     time.sleep(

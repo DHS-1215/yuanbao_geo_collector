@@ -8,3 +8,7 @@ output/
 
 # 浏览器独立登录态
 .chrome-profile/
+.chrome-sessions/
+
+dist/
+run_yuanbao_geo_all.before_session_rotation.bat

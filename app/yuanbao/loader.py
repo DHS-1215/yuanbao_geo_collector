@@ -1,4 +1,4 @@
-import csv
+﻿import csv
 from app.yuanbao.geo_contract import build_question_id
 
 from app.yuanbao.runner import YuanbaoQuestion
@@ -12,7 +12,7 @@ def load_questions(
     with open(
             path,
             "r",
-            encoding="utf-8",
+            encoding="utf-8-sig",
     ) as file:
         reader = csv.DictReader(
             file
@@ -35,3 +35,4 @@ def load_questions(
             )
 
     return questions
+

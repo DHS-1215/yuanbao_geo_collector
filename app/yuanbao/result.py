@@ -49,6 +49,16 @@ class YuanbaoCollectionResult:
 
     source_error: str = ""
 
+    screenshot_path: str = ""
+
+    screenshot_sha256: str = ""
+
+    screenshot_size_bytes: int = 0
+
+    screenshot_width: int = 0
+
+    screenshot_height: int = 0
+
     collected_at: str = ""
 
 

@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+﻿from dataclasses import dataclass
 
 
 @dataclass
@@ -15,6 +15,10 @@ class YuanbaoConfig:
 
     task_delay_max: float = 6.0
 
+    # 每个浏览器 Session 最多完成的完整问题数。
+    # 每个问题包含 quick + expert 两个任务，
+    # 因此默认 5 个问题 = 10 次回答。
+    questions_per_session: int = 5
     # 单任务普通失败自动重试次数。
     # 2 表示首次执行失败后，
     # 最多再重试 2 次，总计最多 3 次尝试。
@@ -31,3 +35,4 @@ class YuanbaoConfig:
     risk_control_delay_min: float = 60.0
 
     risk_control_delay_max: float = 120.0
+
