@@ -19,6 +19,10 @@ from app.yuanbao.checkpoint import (
     YuanbaoCheckpointStore,
 )
 from app.yuanbao.exporter import YuanbaoExporter
+from app.yuanbao.geo_contract import (
+    DEFAULT_PRODUCT_ID,
+    resolve_product,
+)
 
 
 def main():
@@ -26,12 +30,21 @@ def main():
 
     settings = get_settings()
 
-    new_batch_id = datetime.now().strftime(
-        "batch_%Y%m%d_%H%M%S"
+    product_id, product = resolve_product(
+        args.product_id
+    )
+
+    timestamp = datetime.now().strftime(
+        "%Y%m%d_%H%M%S"
+    )
+
+    new_batch_id = (
+        f"batch_{product_id}_{timestamp}"
     )
 
     checkpoint_root = (
-        "output/checkpoints"
+        args.checkpoint_root
+        or f"output/checkpoints/{product_id}"
     )
 
     batch_id, resumed = (
@@ -49,8 +62,6 @@ def main():
             batch_id,
         )
     )
-
-    product = "鸿茅药酒"
 
     with sync_playwright() as playwright:
         browser = connect_cdp(
@@ -73,7 +84,7 @@ def main():
         )
 
         questions = load_questions(
-            "input/questions.csv"
+            args.input_csv
         )
 
         tasks = build_geo_tasks(
@@ -102,6 +113,19 @@ def main():
             f"[PRODUCT] {product}"
         )
 
+        print(
+            f"[PRODUCT ID] {product_id}"
+        )
+
+        print(
+            f"[INPUT]   {args.input_csv}"
+        )
+
+        print(
+            f"[CHECKPOINT ROOT] "
+            f"{checkpoint_root}"
+        )
+
         print()
 
         try:
@@ -127,7 +151,10 @@ def main():
 
             raise SystemExit(4)
 
-        exporter = YuanbaoExporter()
+        exporter = YuanbaoExporter(
+            product_id=product_id,
+            product_name=product,
+        )
 
         exporter.export(
             results,
@@ -182,6 +209,21 @@ def parse_args():
         "--new-batch",
         action="store_true",
         help="忽略未完成批次，强制开始新批次",
+    )
+
+    parser.add_argument(
+        "--product-id",
+        default=DEFAULT_PRODUCT_ID,
+    )
+
+    parser.add_argument(
+        "--input-csv",
+        default="input/questions.csv",
+    )
+
+    parser.add_argument(
+        "--checkpoint-root",
+        default="",
     )
 
     return parser.parse_args()

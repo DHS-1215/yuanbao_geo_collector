@@ -13,6 +13,27 @@ YUANBAO_PLATFORM_NAME = "腾讯元宝"
 DEFAULT_PRODUCT_ID = "hongmao_yaojiu"
 DEFAULT_PRODUCT_NAME = "鸿茅药酒"
 
+PRODUCTS = {
+    "hongmao_yaojiu": "鸿茅药酒",
+    "tianyishou": "天益寿气血固本口服液",
+}
+
+
+def resolve_product(
+        product_id: str,
+) -> tuple[str, str]:
+    value = product_id.strip()
+
+    if value not in PRODUCTS:
+        raise ValueError(
+            f"未知产品：{product_id}"
+        )
+
+    return (
+        value,
+        PRODUCTS[value],
+    )
+
 COLLECTOR_VERSION = "0.1.0"
 
 

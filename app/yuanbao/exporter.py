@@ -24,6 +24,14 @@ from app.yuanbao.screenshot import (
 
 class YuanbaoExporter:
 
+    def __init__(
+            self,
+            product_id: str = DEFAULT_PRODUCT_ID,
+            product_name: str = DEFAULT_PRODUCT_NAME,
+    ) -> None:
+        self.product_id = product_id
+        self.product_name = product_name
+
     def export(
             self,
             results: list[YuanbaoCollectionResult],
@@ -587,10 +595,10 @@ class YuanbaoExporter:
             ),
 
             "product_id": (
-                DEFAULT_PRODUCT_ID
+                self.product_id
             ),
             "product_name": (
-                DEFAULT_PRODUCT_NAME
+                self.product_name
             ),
 
             "batch_id": batch_id,

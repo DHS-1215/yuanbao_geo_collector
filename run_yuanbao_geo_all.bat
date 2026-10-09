@@ -11,8 +11,12 @@ rem ============================================================
 rem Config
 rem ============================================================
 
-set "INPUT_CSV=input\questions.csv"
 set "OUTPUT_ROOT=output"
+
+set "PRODUCT_ID="
+set "PRODUCT_NAME="
+set "INPUT_CSV="
+set "CHECKPOINT_ROOT="
 
 set "YUANBAO_PYTHON=%~dp0.venv\Scripts\python.exe"
 
@@ -41,6 +45,56 @@ if not exist "%OUTPUT_ROOT%" (
 
 
 rem ============================================================
+rem Product menu
+rem ============================================================
+
+:PRODUCT_MENU
+
+echo.
+echo ============================================================
+echo Tencent Yuanbao GEO Collector
+echo ============================================================
+echo Select product:
+echo.
+echo [1] 鸿茅药酒
+echo [2] 天益寿气血固本口服液
+echo [0] Exit
+echo ============================================================
+echo.
+
+set "PRODUCT_SELECT="
+set /p "PRODUCT_SELECT=Select product: "
+
+if "%PRODUCT_SELECT%"=="1" goto :SET_HONGMAO
+if "%PRODUCT_SELECT%"=="2" goto :SET_TIANYISHOU
+if "%PRODUCT_SELECT%"=="0" exit /b 0
+
+echo.
+echo [ERROR] Invalid product selection.
+goto :PRODUCT_MENU
+
+
+:SET_HONGMAO
+
+set "PRODUCT_ID=hongmao_yaojiu"
+set "PRODUCT_NAME=鸿茅药酒"
+set "INPUT_CSV=input\questions.csv"
+set "CHECKPOINT_ROOT=%OUTPUT_ROOT%\checkpoints\hongmao_yaojiu"
+
+goto :MENU
+
+
+:SET_TIANYISHOU
+
+set "PRODUCT_ID=tianyishou"
+set "PRODUCT_NAME=天益寿气血固本口服液"
+set "INPUT_CSV=input\tianyishou_questions.csv"
+set "CHECKPOINT_ROOT=%OUTPUT_ROOT%\checkpoints\tianyishou"
+
+goto :MENU
+
+
+rem ============================================================
 rem Main menu
 rem ============================================================
 
@@ -50,6 +104,9 @@ echo.
 echo ============================================================
 echo Tencent Yuanbao GEO Collector
 echo ============================================================
+echo [PRODUCT] %PRODUCT_NAME%
+echo [PRODUCT ID] %PRODUCT_ID%
+echo.
 echo [1] Start new collection
 echo [2] Resume last unfinished collection
 echo [0] Exit
@@ -85,7 +142,7 @@ rem ============================================================
 
 :RESUME_RUN
 
-if not exist "%OUTPUT_ROOT%\checkpoints\active_batch.json" (
+if not exist "%CHECKPOINT_ROOT%\active_batch.json" (
     echo.
     echo [ERROR] No unfinished Yuanbao batch was found.
     echo.
@@ -112,8 +169,11 @@ echo.
 echo ============================================================
 echo Yuanbao GEO One Click Pipeline
 echo ============================================================
-echo [INPUT] %INPUT_CSV%
-echo [ZIP]   %PACKAGE_PATH%
+echo [PRODUCT]    %PRODUCT_NAME%
+echo [PRODUCT ID] %PRODUCT_ID%
+echo [INPUT]      %INPUT_CSV%
+echo [CHECKPOINT] %CHECKPOINT_ROOT%
+echo [ZIP]        %PACKAGE_PATH%
 echo ============================================================
 echo.
 
@@ -165,6 +225,9 @@ echo.
 
 "%YUANBAO_PYTHON%" ^
     -m scripts.smoke_yuanbao_batch ^
+    --product-id "!PRODUCT_ID!" ^
+    --input-csv "!INPUT_CSV!" ^
+    --checkpoint-root "!CHECKPOINT_ROOT!" ^
     !BATCH_ARG!
 
 set "COLLECT_EXIT=!ERRORLEVEL!"
@@ -418,7 +481,9 @@ echo.
 echo Current Yuanbao batch is still unfinished.
 echo Checkpoint has been preserved.
 echo.
-echo Run this BAT again and select:
+echo Run this BAT again.
+echo.
+echo Select the SAME product first, then select:
 echo.
 echo   [2] Resume last unfinished collection
 echo.
